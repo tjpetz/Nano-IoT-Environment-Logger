@@ -16,8 +16,8 @@
 #include <WiFiNINA.h>
 #include <time.h>
 #include <Adafruit_SleepyDog.h>
-// #include <Adafruit_BME280.h>
-#include <Adafruit_SHTC3.h>
+#include <Adafruit_BME280.h>
+// #include <Adafruit_SHTC3.h>
 
 // #include "ConfigService.h"
 // #include "PagingOLEDDisplay.h"
@@ -31,7 +31,7 @@
 #include <map>
 
 #define DEFAULT_HOSTNAME "iot_nano_001"
-#define DEFAULT_MQTTBROKER "mqtt.bb.tjpetz.com"
+#define DEFAULT_MQTTBROKER SECRET_MQTTBROKER
 #define DEFAULT_MQTTROOTTOPIC "tjpetz.com/sensor"
 #define DEFAULT_SAMPLEINTERVAL 60
 #define DEFAULT_LOCATION "dinning room"
@@ -47,8 +47,8 @@ struct {
   char location[128];
 } config;
 
-Adafruit_SHTC3 envSensor;
-
+// Adafruit_SHTC3 envSensor;
+Adafruit_BME280 envSensor;
 
 // We will not attempt connections to peripherals with a less then -90 dBm RSSI.
 #define RSSI_LIMIT -95
@@ -182,7 +182,7 @@ void initializeRTC() {
 
 /** @brief send the measurements via mqtt
  *  @return true if success */
-bool sendMeasurementsToMQTT(float temperature, float humidity, // float pressure, int battery,
+bool sendMeasurementsToMQTT(float temperature, float humidity, float pressure, int battery,
   const char* name, const char *location) {
   
   bool status = false;
@@ -207,11 +207,11 @@ bool sendMeasurementsToMQTT(float temperature, float humidity, // float pressure
   //     "{ \"sensor\": \"%s\", \"location\": \"%s\", \"sampleTime\": \"%s\", "
   //     "\"temperature\": %.2f, \"humidity\": %.2f, \"pressure\": %.2f, \"battery\": %d }",
   //     name, location, dateTime, temperature, humidity, pressure, battery);
-  snprintf(
-      msg, sizeof(msg),
-      "{ \"sensor\": \"%s\", \"location\": \"%s\", \"sampleTime\": \"%s\", "
-      "\"temperature\": %.2f, \"humidity\": %.2f }",
-      name, location, dateTime, temperature, humidity);
+  // snprintf(
+  //     msg, sizeof(msg),
+  //     "{ \"sensor\": \"%s\", \"location\": \"%s\", \"sampleTime\": \"%s\", "
+  //     "\"temperature\": %.2f, \"humidity\": %.2f }",
+  //     name, location, dateTime, temperature, humidity);
   DEBUG_PRINTF("Message = %s\n", msg);
   mqttClient.print(msg);
   mqttClient.endMessage();
@@ -298,17 +298,17 @@ void loop() {
   delay(500);
   digitalWrite(LED_BUILTIN, 0);
 
-  // auto temp = envSensor.readTemperature();
-  // auto humidity = envSensor.readHumidity();
-  // auto pressure = envSensor.readPressure() / 100.0 * 0.0145037738;
+  auto temp = envSensor.readTemperature();
+  auto humidity = envSensor.readHumidity();
+  auto pressure = envSensor.readPressure() / 100.0 * 0.0145037738;
 
-  sensors_event_t temp, humidity;
-  envSensor.getEvent(&humidity, &temp);
+  // sensors_event_t temp, humidity;
+  // envSensor.getEvent(&humidity, &temp);
 
   connectWiFi();
   mqttClient.connect(config.mqttBroker, port);
-  // sendMeasurementsToMQTT(temp, humidity, pressure, analogRead(BATTERY_SENSE), config.hostName, config.location);    
-  sendMeasurementsToMQTT(temp.temperature, humidity.relative_humidity, config.hostName, config.location);    
+  sendMeasurementsToMQTT(temp, humidity, pressure, analogRead(BATTERY_SENSE), config.hostName, config.location);    
+  // sendMeasurementsToMQTT(temp.temperature, humidity.relative_humidity, config.hostName, config.location);    
   mqttClient.flush();
   delay(3000);
   mqttClient.stop();

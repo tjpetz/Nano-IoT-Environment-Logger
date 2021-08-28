@@ -34,3 +34,7 @@
 .DS_Store
 
 secret.h
+
+build/
+.vscode/
+sketch.json
