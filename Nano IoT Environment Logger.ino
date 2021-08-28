@@ -210,45 +210,6 @@ void initializeRTC() {
   disconnectWiFi();
 }
 
-/** @brief send the measurements via mqtt
- *  @return true if success */
-bool sendMeasurementsToMQTT(float temperature, float humidity, float pressure, int battery,
-  const char* name, const char *location) {
-  
-  bool status = false;
-
-  DEBUG_PRINTF("Attempting to send measurement\n");
-  Watchdog.reset();
-
-  char topic[MAX_TOPIC_LENGTH];
-  snprintf(topic, sizeof(topic), "%s/%s/environment", config.topicRoot,
-            name);
-  DEBUG_PRINTF("Topic = %s\n", topic);
-
-  mqttClient.beginMessage(topic);
-  char dateTime[32];
-  snprintf(dateTime, sizeof(dateTime), "%04d-%02d-%02dT%02d:%02d:%02d",
-            rtc.getYear() + 2000, rtc.getMonth(), rtc.getDay(),
-            rtc.getHours(), rtc.getMinutes(), rtc.getSeconds());
-  DEBUG_PRINTF("Sample Time = %s\n", dateTime);
-  char msg[255];
-  snprintf(
-      msg, sizeof(msg),
-      "{ \"sensor\": \"%s\", \"location\": \"%s\", \"sampleTime\": \"%s\", "
-      "\"temperature\": %.2f, \"humidity\": %.2f, \"pressure\": %.2f, \"battery\": %d }",
-      name, location, dateTime, temperature, humidity, pressure, battery);
-  // snprintf(
-  //     msg, sizeof(msg),
-  //     "{ \"sensor\": \"%s\", \"location\": \"%s\", \"sampleTime\": \"%s\", "
-  //     "\"temperature\": %.2f, \"humidity\": %.2f }",
-  //     name, location, dateTime, temperature, humidity);
-  DEBUG_PRINTF("Message = %s\n", msg);
-  mqttClient.print(msg);
-  mqttClient.endMessage();
-  status = true;
-  return status;
-}
-
 void onCentralConnected(BLEDevice central) {
   DEBUG_PRINTF("Connection from: %s, rssi = %d, at %lu\n",
                central.address().c_str(), central.rssi(), millis());
