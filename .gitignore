@@ -35,6 +35,6 @@
 
 secret.h
 
-build/
-.vscode/
+build/**
+.vscode/**
 sketch.json
