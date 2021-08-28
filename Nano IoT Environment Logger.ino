@@ -4,24 +4,47 @@
  *
  * Features:
  *  Low power - sleep for extended periods of time.
- *  BME280 - temp, pressure, humidity sensor (at present)
  *  BLE configurable WiFi
  *  Configuration settings in flash memory
- *
+ *  Currently supports the following environmental sensors
+ *    BME280 - Temp, Humidity, Pressure
+ *    SHTC3 - Temp, Humidity
+ *    ADT7410 - Temp
+ *  Battery level reporting
+ * 
  *  BLE Configuration
  *
  *  After reset the system will start in an initializing state.  In this state BLE is enabled
  *  and configuration setting changes can be made.  After 1 minutes if BLE is not connected 
  *  the system will transition to the running state. 
+ *
+ *  Sensor Selection
+ *    define one of SENSOR_TYPE_BME280, SENSOR_TYPE_SHTC3, SENSOR_TYPE_ADT7410
+ *  
+ *  Battery measurement
+ *    define BATTERY_SENSE as the analog pin to measure the battery voltage with
  */
 
+/** Begin configuration defines */
+// Define SECRET_SSID, SECRET_PASSWORD, and SECRET_MQTTBROKER in the secret.h file.
 #define DEFAULT_SSID SECRET_SSID
 #define DEFAULT_PASSWORD SECRET_PASSWORD
-#define DEFAULT_HOSTNAME "iot_nano_001"
 #define DEFAULT_MQTTBROKER SECRET_MQTTBROKER
+#define DEFAULT_HOSTNAME "iot_nano_001"
 #define DEFAULT_MQTTROOTTOPIC "tjpetz.com/sensor"
 #define DEFAULT_SAMPLEINTERVAL 60
 #define DEFAULT_LOCATION "unknown"
+
+// Define only one of the following for the sensor type connected to the Nano.
+#define SENSOR_TYPE_BME280
+// #define SENSOR_TYPE_SHTC3
+// #define SENSOR_TYPE_ADT7410
+
+// Define only if measuring the voltage of the battery
+#define BATTERY_SENSE A0
+
+#define _DEBUG
+/** End configuration defines */
 
 #include <Arduino.h>
 #include <ArduinoBLE.h>
@@ -31,24 +54,27 @@
 #include <time.h>
 #include <Adafruit_SleepyDog.h>
 
+#ifdef SENSOR_TYPE_BME280
 #include <Adafruit_BME280.h>
-// #include <Adafruit_SHTC3.h>
+Adafruit_BME280 envSensor;
+#endif
+#ifdef SENSOR_TYPE_SHTC3
+#include <Adafruit_SHTC3.h>
+Adafruit_SHTC3 envSensor;
+#endif
+#ifdef SENSOR_TYPE_ADT7410
+#include <Adafruit_ADT7410.h>
+Adafruit_ADT7410 envSensor;
+#endif
 
-#include "ConfigService.h"
 #include "secret.h"
-
-#define _DEBUG_
+#include "ConfigService.h"
 #include "Debug.h"
-
-#define BATTERY_SENSE A0
 
 ConfigService config(DEFAULT_SSID, DEFAULT_PASSWORD,
            DEFAULT_HOSTNAME, DEFAULT_LOCATION, 
            DEFAULT_MQTTBROKER, DEFAULT_MQTTROOTTOPIC,
            DEFAULT_SAMPLEINTERVAL);
-
-// Adafruit_SHTC3 envSensor;
-Adafruit_BME280 envSensor;
 
 // We will not attempt connections to peripherals with a less then -90 dBm RSSI.
 #define RSSI_LIMIT -95
@@ -235,6 +261,33 @@ void onCentralDisconnected(BLEDevice central) {
   DEBUG_PRINTF("  BLE Central = %s\n", BLE.central().address().c_str());
 }
 
+/** @brief sleep for a long duration of time, turning off peripherals to save power
+*/
+void longDeepSleep(unsigned long sleepDuration_ms) {
+
+  Serial.print("Beginning long sleep of ");
+  Serial.print(sleepDuration_ms);
+  Serial.println(" ms");
+  Serial.flush(); 
+  USBDevice.detach();
+
+  const int maxSleepDuration = 16000;
+  if (sleepDuration_ms <= maxSleepDuration) {
+    // We can sleep in 1 interval
+    Watchdog.sleep(sleepDuration_ms);
+  } else {
+    // Sleep in 16 second intervals and briefly wake up repeatedly until we're done sleeping.
+    while (sleepDuration_ms > 0) {
+      auto sleptFor = Watchdog.sleep(sleepDuration_ms <= maxSleepDuration ? sleepDuration_ms : maxSleepDuration);
+      sleepDuration_ms -= sleptFor;
+    }
+  }
+
+  USBDevice.attach();   // Reattach the USB device after we wake up
+  delay(1500);
+  Serial.println("Waking from a long sleep!");
+}
+
 void setup() {
 
   Serial.begin(115200);
@@ -268,34 +321,6 @@ void setup() {
   DEBUG_PRINTF("BLE Initialized\n");
 
   currentState = initializing;
-  
-}
-
-/** @brief sleep for a long duration of time, turning off peripherals to save power
-*/
-void longDeepSleep(unsigned long sleepDuration_ms) {
-
-  Serial.print("Beginning long sleep of ");
-  Serial.print(sleepDuration_ms);
-  Serial.println(" ms");
-  Serial.flush(); 
-  USBDevice.detach();
-
-  const int maxSleepDuration = 16000;
-  if (sleepDuration_ms <= maxSleepDuration) {
-    // We can sleep in 1 interval
-    Watchdog.sleep(sleepDuration_ms);
-  } else {
-    // Sleep in 16 second intervals and briefly wake up repeatedly until we're done sleeping.
-    while (sleepDuration_ms > 0) {
-      auto sleptFor = Watchdog.sleep(sleepDuration_ms <= maxSleepDuration ? sleepDuration_ms : maxSleepDuration);
-      sleepDuration_ms -= sleptFor;
-    }
-  }
-
-  USBDevice.attach();   // Reattach the USB device after we wake up
-  delay(1500);
-  Serial.println("Waking from a long sleep!");
 }
 
 void loop() {
@@ -322,17 +347,51 @@ void loop() {
       break;
 
     case running:    
-      auto temp = envSensor.readTemperature();
-      auto humidity = envSensor.readHumidity();
-      auto pressure = envSensor.readPressure() / 100.0 * 0.0145037738;
-
-      // sensors_event_t temp, humidity;
-      // envSensor.getEvent(&humidity, &temp);
+      char topic[MAX_TOPIC_LENGTH], dateTime[32], msg[255], sensor_msg[200];
+      snprintf(topic, sizeof(topic), "%s/%s/environment", config.topicRoot, config.hostName);
+      snprintf(dateTime, sizeof(dateTime), "%04d-%02d-%02dT%02d:%02d:%02d",
+                rtc.getYear() + 2000, rtc.getMonth(), rtc.getDay(),
+                rtc.getHours(), rtc.getMinutes(), rtc.getSeconds());
 
       connectWiFi();
       mqttClient.connect(config.mqttBroker, port);
-      sendMeasurementsToMQTT(temp, humidity, pressure, analogRead(BATTERY_SENSE), config.hostName, config.location);    
-      // sendMeasurementsToMQTT(temp.temperature, humidity.relative_humidity, config.hostName, config.location);    
+      mqttClient.beginMessage(topic);
+
+#ifdef SENSOR_TYPE_BME280
+      auto temp = envSensor.readTemperature();
+      auto humidity = envSensor.readHumidity();
+      auto pressure = envSensor.readPressure() / 100.0 * 0.0145037738;
+      snprintf(sensor_msg, sizeof(sensor_msg), "\"temperature\": %.2f, \"humidity\": %.2f, \"pressure\": %.2f", temp, humidity, pressure);
+#endif
+
+#ifdef SENSOR_TYPE_SHTC3
+      sensors_event_t temp, humidity;
+      envSensor.getEvent(&humidity, &temp);
+      snprintf(sensor_msg, sizeof(sensor_msg), "\"temperature\": %.2f, \"humidity\": %.2f", temp.temperature, humidity.relative_humidity);
+#endif
+
+#ifdef SENSOR_TYPE_ADT7410
+      auto temp = envSensor.readTempC();
+      snprintf(sensor_msg, sizeof(sensor_msg), "\"temperature\": %.2f", temp);
+#endif
+
+#ifdef BATTERY_SENSE
+  snprintf(
+      msg, sizeof(msg),
+      "{ \"sensor\": \"%s\", \"location\": \"%s\", \"sampleTime\": \"%s\", "
+      "%s, \"battery\": %d }",
+      config.hostName, config.location, dateTime, sensor_msg, map(analogRead(BATTERY_SENSE), 465, 651, 0, 100));
+#else
+  snprintf(
+      msg, sizeof(msg),
+      "{ \"sensor\": \"%s\", \"location\": \"%s\", \"sampleTime\": \"%s\", "
+      "%s}",
+      config.hostName, config.location, dateTime, sensor_msg);
+#endif
+
+      DEBUG_PRINTF("Message = %s\n", msg);
+      mqttClient.print(msg);
+      mqttClient.endMessage();
       mqttClient.flush();
       delay(3000);
       mqttClient.stop();
@@ -341,7 +400,6 @@ void loop() {
       Watchdog.reset();
       longDeepSleep(config.sampleInterval * 1000);
       break;
-            
     }
 
 }
