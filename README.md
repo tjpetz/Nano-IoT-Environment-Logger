@@ -21,3 +21,7 @@ Note, you must always set the WiFi password when updating the configuration.
 ### Battery Monitor
 
 If enabled the charge level of the battery will be included in the MQTT message.
+
+### LUA Script for BlueSee
+
+Use BlueSee with the included LUA script for a simple UI to configure the board via BLE.
