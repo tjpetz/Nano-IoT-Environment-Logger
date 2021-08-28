@@ -7,7 +7,21 @@
  *  BME280 - temp, pressure, humidity sensor (at present)
  *  BLE configurable WiFi
  *  Configuration settings in flash memory
+ *
+ *  BLE Configuration
+ *
+ *  After reset the system will start in an initializing state.  In this state BLE is enabled
+ *  and configuration setting changes can be made.  After 2 minutes the system
+ *  will transition to the running state. 
  */
+
+#define DEFAULT_SSID SECRET_SSID
+#define DEFAULT_PASSWORD SECRET_PASSWORD
+#define DEFAULT_HOSTNAME "iot_nano_001"
+#define DEFAULT_MQTTBROKER SECRET_MQTTBROKER
+#define DEFAULT_MQTTROOTTOPIC "tjpetz.com/sensor"
+#define DEFAULT_SAMPLEINTERVAL 60
+#define DEFAULT_LOCATION "unknown"
 
 #include <Arduino.h>
 #include <ArduinoBLE.h>
@@ -16,11 +30,11 @@
 #include <WiFiNINA.h>
 #include <time.h>
 #include <Adafruit_SleepyDog.h>
+
 #include <Adafruit_BME280.h>
 // #include <Adafruit_SHTC3.h>
 
-// #include "ConfigService.h"
-// #include "PagingOLEDDisplay.h"
+#include "ConfigService.h"
 #include "secret.h"
 
 #define _DEBUG_
@@ -28,24 +42,22 @@
 
 #undef max
 #undef min
-#include <map>
-
-#define DEFAULT_HOSTNAME "iot_nano_001"
-#define DEFAULT_MQTTBROKER SECRET_MQTTBROKER
-#define DEFAULT_MQTTROOTTOPIC "tjpetz.com/sensor"
-#define DEFAULT_SAMPLEINTERVAL 60
-#define DEFAULT_LOCATION "dinning room"
 
 #define BATTERY_SENSE A0
 
-struct {
-  char ssid[64];
-  char wifiPassword[64];
-  char mqttBroker[128];
-  char hostName[128];
-  char topicRoot[128];
-  char location[128];
-} config;
+ConfigService config(DEFAULT_SSID, DEFAULT_PASSWORD,
+           DEFAULT_HOSTNAME, DEFAULT_LOCATION, 
+           DEFAULT_MQTTBROKER, DEFAULT_MQTTROOTTOPIC,
+           DEFAULT_SAMPLEINTERVAL);
+
+// struct {
+//   char ssid[64];
+//   char wifiPassword[64];
+//   char mqttBroker[128];
+//   char hostName[128];
+//   char topicRoot[128];
+//   char location[128];
+// } config;
 
 // Adafruit_SHTC3 envSensor;
 Adafruit_BME280 envSensor;
@@ -69,6 +81,10 @@ bool success = false;
 
 const int watchdogTimeout = 16384;    // max timeout is 16.384 S
 
+enum {
+  initializing = 0,
+  running  
+} currentState;
 
 /** @brief Update the RTC by calling NTP, requires WiFi to be available */
 bool updateRTC() {
@@ -202,11 +218,11 @@ bool sendMeasurementsToMQTT(float temperature, float humidity, float pressure, i
             rtc.getHours(), rtc.getMinutes(), rtc.getSeconds());
   DEBUG_PRINTF("Sample Time = %s\n", dateTime);
   char msg[255];
-  // snprintf(
-  //     msg, sizeof(msg),
-  //     "{ \"sensor\": \"%s\", \"location\": \"%s\", \"sampleTime\": \"%s\", "
-  //     "\"temperature\": %.2f, \"humidity\": %.2f, \"pressure\": %.2f, \"battery\": %d }",
-  //     name, location, dateTime, temperature, humidity, pressure, battery);
+  snprintf(
+      msg, sizeof(msg),
+      "{ \"sensor\": \"%s\", \"location\": \"%s\", \"sampleTime\": \"%s\", "
+      "\"temperature\": %.2f, \"humidity\": %.2f, \"pressure\": %.2f, \"battery\": %d }",
+      name, location, dateTime, temperature, humidity, pressure, battery);
   // snprintf(
   //     msg, sizeof(msg),
   //     "{ \"sensor\": \"%s\", \"location\": \"%s\", \"sampleTime\": \"%s\", "
@@ -219,28 +235,27 @@ bool sendMeasurementsToMQTT(float temperature, float humidity, float pressure, i
   return status;
 }
 
-// void onCentralConnected(BLEDevice central) {
-//   DEBUG_PRINTF("Connection from: %s, rssi = %d, at %lu\n",
-//                central.address().c_str(), central.rssi(), millis());
-//   DEBUG_PRINTF("  BLE Central = %s\n", BLE.central().address().c_str());
-// }
+void onCentralConnected(BLEDevice central) {
+  DEBUG_PRINTF("Connection from: %s, rssi = %d, at %lu\n",
+               central.address().c_str(), central.rssi(), millis());
+  DEBUG_PRINTF("  BLE Central = %s\n", BLE.central().address().c_str());
+}
 
-// void onCentralDisconnected(BLEDevice central) {
-//   DEBUG_PRINTF("Disconnected from: %s, at %lu\n", central.address().c_str(),
-//                millis());
-//   DEBUG_PRINTF("  BLE Central = %s\n", BLE.central().address().c_str());
-// }
-
+void onCentralDisconnected(BLEDevice central) {
+  DEBUG_PRINTF("Disconnected from: %s, at %lu\n", central.address().c_str(),
+               millis());
+  DEBUG_PRINTF("  BLE Central = %s\n", BLE.central().address().c_str());
+}
 
 void setup() {
 
   // Initialize the configuration using dummies
-  strncpy(config.ssid, SECRET_SSID, sizeof(config.ssid));
-  strncpy(config.wifiPassword, SECRET_PASSWORD, sizeof(config.wifiPassword));
-  strncpy(config.mqttBroker, DEFAULT_MQTTBROKER, sizeof(config.mqttBroker));
-  strncpy(config.hostName, DEFAULT_HOSTNAME, sizeof(config.hostName));
-  strncpy(config.topicRoot, DEFAULT_MQTTROOTTOPIC, sizeof(config.topicRoot));
-  strncpy(config.location, DEFAULT_LOCATION, sizeof(config.location));
+  // strncpy(config.ssid, SECRET_SSID, sizeof(config.ssid));
+  // strncpy(config.wifiPassword, SECRET_PASSWORD, sizeof(config.wifiPassword));
+  // strncpy(config.mqttBroker, DEFAULT_MQTTBROKER, sizeof(config.mqttBroker));
+  // strncpy(config.hostName, DEFAULT_HOSTNAME, sizeof(config.hostName));
+  // strncpy(config.topicRoot, DEFAULT_MQTTROOTTOPIC, sizeof(config.topicRoot));
+  // strncpy(config.location, DEFAULT_LOCATION, sizeof(config.location));
 
   Serial.begin(115200);
   delay(3000); // Give serial a moment to start
@@ -257,11 +272,23 @@ void setup() {
   rtc.begin();
   envSensor.begin();
 
-  initializeRTC();
-
   digitalWrite(LED_BUILTIN, LOW);
   Watchdog.reset();
 
+  config.debug_print_configuration();
+  
+  DEBUG_PRINTF("Initializing BLE\n");
+  BLE.begin(); 
+  BLE.setLocalName(config.hostName);
+  config.begin();
+  BLE.setAdvertisedService(config.getConfigService());
+  BLE.setEventHandler(BLEConnected, onCentralConnected);
+  BLE.setEventHandler(BLEDisconnected, onCentralDisconnected);
+  BLE.advertise();
+  DEBUG_PRINTF("BLE Initialized\n");
+
+  currentState = initializing;
+  
 }
 
 /** @brief sleep for a long duration of time, turning off peripherals to save power
@@ -298,23 +325,43 @@ void loop() {
   delay(500);
   digitalWrite(LED_BUILTIN, 0);
 
-  auto temp = envSensor.readTemperature();
-  auto humidity = envSensor.readHumidity();
-  auto pressure = envSensor.readPressure() / 100.0 * 0.0145037738;
+  switch (currentState) {
+    case initializing:
+      if ((millis() < (1 * 60 * 1000)) || BLE.connected()) {
+        BLE.poll(500);
+      } else {
+        DEBUG_PRINTF("Exiting initialization\n");
+        config.debug_print_configuration();
+        BLE.disconnect();
+        BLE.end();
+        delay(1750);      // Allow the Nina radio to reset
+        Watchdog.reset();
+        initializeRTC();
+        currentState = running;
+      }
+      break;
 
-  // sensors_event_t temp, humidity;
-  // envSensor.getEvent(&humidity, &temp);
+    case running:    
+      auto temp = envSensor.readTemperature();
+      auto humidity = envSensor.readHumidity();
+      auto pressure = envSensor.readPressure() / 100.0 * 0.0145037738;
 
-  connectWiFi();
-  mqttClient.connect(config.mqttBroker, port);
-  sendMeasurementsToMQTT(temp, humidity, pressure, analogRead(BATTERY_SENSE), config.hostName, config.location);    
-  // sendMeasurementsToMQTT(temp.temperature, humidity.relative_humidity, config.hostName, config.location);    
-  mqttClient.flush();
-  delay(3000);
-  mqttClient.stop();
-  disconnectWiFi();
+      // sensors_event_t temp, humidity;
+      // envSensor.getEvent(&humidity, &temp);
 
-  Watchdog.reset();
-  longDeepSleep(15 * 60 * 1000);
+      connectWiFi();
+      mqttClient.connect(config.mqttBroker, port);
+      sendMeasurementsToMQTT(temp, humidity, pressure, analogRead(BATTERY_SENSE), config.hostName, config.location);    
+      // sendMeasurementsToMQTT(temp.temperature, humidity.relative_humidity, config.hostName, config.location);    
+      mqttClient.flush();
+      delay(3000);
+      mqttClient.stop();
+      disconnectWiFi();
+
+      Watchdog.reset();
+      longDeepSleep(config.sampleInterval * 1000);
+      break;
+            
+    }
 
 }

@@ -12,6 +12,7 @@ typedef struct {
   char hostName[32];
   char mqttBroker[64];
   char topicRoot[64];
+  char location[64];
   unsigned int sampleInterval;
   char configurationPassword[64];
 } ConfigServiceEEPROM_t;
@@ -23,7 +24,9 @@ static ConfigService
 
 void onLock(BLEDevice central, BLECharacteristic characteristic);
 
-ConfigService::ConfigService(const char *p_hostName, const char *p_mqttBroker,
+ConfigService::ConfigService(const char *p_ssid, const char *p_passwd,
+                             const char *p_hostName, const char *p_location,
+                             const char *p_mqttBroker,
                              const char *p_topicRoot,
                              unsigned int p_sampleInterval)
     : service_("44af2abf-f3d9-4429-bbb8-ec770f1e355a"),
@@ -42,6 +45,9 @@ ConfigService::ConfigService(const char *p_hostName, const char *p_mqttBroker,
       topicRootCharacteristic_("18cda5b0-3b76-4319-9716-acd1a409d3f6",
                                BLERead | BLEWrite, sizeof(topicRoot)),
       topicRootDescriptor_("2901", "MQTT Root Topic"),
+      locationCharacteristic_("69394063-f713-4ff7-be75-77d614d91709", 
+                               BLERead | BLEWrite, sizeof(location)),
+      locationDescriptor_("2901", "Sensor Location"),
       sampleIntervalCharacteristic_("1682229f-bb5c-4f4a-96a9-1027f13d83f9",
                                     BLERead | BLEWrite),
       sampleIntervalDescriptor_("2901", "Sample Interval in Seconds"),
@@ -49,10 +55,12 @@ ConfigService::ConfigService(const char *p_hostName, const char *p_mqttBroker,
                               BLERead | BLENotify),
       lockCharacteristic_("29636a43-d59a-46a1-ad0a-34aa23a0e90c", BLEWrite,
                           sizeof(configurationPassword)) {
-  memset(ssid, 0, sizeof(ssid));
+  strncpy(ssid, p_ssid, sizeof(ssid));
+  strncpy(wifiPassword, p_passwd, sizeof(wifiPassword));
   strncpy(hostName, p_hostName, sizeof(hostName));
   strncpy(mqttBroker, p_mqttBroker, sizeof(mqttBroker));
   strncpy(topicRoot, p_topicRoot, sizeof(topicRoot));
+  strncpy(location, p_location, sizeof(location));
   sampleInterval = p_sampleInterval;
 
   isInitialized = false;
@@ -69,6 +77,7 @@ ConfigService::ConfigService(const char *p_hostName, const char *p_mqttBroker,
     strncpy(hostName, flashConfig.hostName, sizeof(hostName));
     strncpy(mqttBroker, flashConfig.mqttBroker, sizeof(mqttBroker));
     strncpy(topicRoot, flashConfig.topicRoot, sizeof(topicRoot));
+    strncpy(location, flashConfig.location, sizeof(location));
     sampleInterval = flashConfig.sampleInterval;
     strncpy(configurationPassword, flashConfig.configurationPassword,
             sizeof(configurationPassword));
@@ -89,6 +98,7 @@ void ConfigService::begin() {
   hostNameCharacteristic_.addDescriptor(hostNameDescriptor_);
   mqttBrokerCharacteristic_.addDescriptor(mqttBrokerDescriptor_);
   topicRootCharacteristic_.addDescriptor(topicRootDescriptor_);
+  locationCharacteristic_.addDescriptor(locationDescriptor_);
   sampleIntervalCharacteristic_.addDescriptor(sampleIntervalDescriptor_);
 
   // set the initial values
@@ -96,6 +106,7 @@ void ConfigService::begin() {
   hostNameCharacteristic_.writeValue(hostName);
   mqttBrokerCharacteristic_.writeValue(mqttBroker);
   topicRootCharacteristic_.writeValue(topicRoot);
+  locationCharacteristic_.writeValue(location);
   sampleIntervalCharacteristic_.writeValue(sampleInterval);
   isLockedCharacteristic_.writeValue(isLocked ? 1 : 0);
 
@@ -107,6 +118,7 @@ void ConfigService::begin() {
   service_.addCharacteristic(hostNameCharacteristic_);
   service_.addCharacteristic(mqttBrokerCharacteristic_);
   service_.addCharacteristic(topicRootCharacteristic_);
+  service_.addCharacteristic(locationCharacteristic_);
   service_.addCharacteristic(sampleIntervalCharacteristic_);
   service_.addCharacteristic(isLockedCharacteristic_);
   service_.addCharacteristic(lockCharacteristic_);
@@ -137,6 +149,9 @@ void onLock(BLEDevice central, BLECharacteristic characteristic) {
     strncpy(singleton->topicRoot,
             singleton->topicRootCharacteristic_.value().c_str(),
             sizeof(singleton->topicRoot));
+    strncpy(singleton->location,
+            singleton->locationCharacteristic_.value().c_str(),
+            sizeof(singleton->location));
     singleton->sampleInterval = singleton->sampleIntervalCharacteristic_.value();
     singleton->isLockedCharacteristic_.writeValue(1);
 
@@ -154,6 +169,8 @@ void onLock(BLEDevice central, BLECharacteristic characteristic) {
             sizeof(flashConfig.mqttBroker));
     strncpy(flashConfig.topicRoot, singleton->topicRoot,
             sizeof(flashConfig.topicRoot));
+    strncpy(flashConfig.location, singleton->location,
+            sizeof(flashConfig.location));
     flashConfig.sampleInterval = singleton->sampleInterval;
     strncpy(flashConfig.configurationPassword, singleton->configurationPassword,
             sizeof(flashConfig.configurationPassword));
@@ -189,8 +206,10 @@ void onLock(BLEDevice central, BLECharacteristic characteristic) {
 void ConfigService::debug_print_configuration() {
   DEBUG_PRINTF("--- Current Configuration ---\n");
   DEBUG_PRINTF(" SSID = %s\n", ssid);
+  DEBUG_PRINTF(" wifiPasswd = %s\n", wifiPassword);
   DEBUG_PRINTF(" hostname = %s\n", hostName);
   DEBUG_PRINTF(" mqttBroker = %s\n", mqttBroker);
   DEBUG_PRINTF(" topicRoot = %s\n", topicRoot);
+  DEBUG_PRINTF(" location = %s\n", location);  
   DEBUG_PRINTF(" sampleInterval = %u\n", sampleInterval);
 }

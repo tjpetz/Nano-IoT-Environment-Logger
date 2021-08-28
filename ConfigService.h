@@ -10,8 +10,10 @@
  */
 class ConfigService {
 public:
-  ConfigService(const char *p_hostName, const char *p_mqttBroker,
-                const char *p_topicRoot, unsigned int p_sampleInterval);
+  ConfigService(const char *p_ssid, const char *p_passwd,
+                const char *p_hostName, const char *p_location, 
+                const char *p_mqttBroker, const char *p_topicRoot,
+                unsigned int p_sampleInterval);
 
   /** @brief Initialize the service, call before use. */
   void begin();
@@ -29,6 +31,7 @@ public:
   char hostName[32];     /** host name used for as the local device name */
   char mqttBroker[64];   /** FQDN address of the mqtt server */
   char topicRoot[64];    /** mqtt topic name to use as the base name */
+  char location[64];     /** sensor location */
   unsigned int sampleInterval; /** not currently used! */
 
   bool isInitialized; /** True if initialized from Flash memory */
@@ -49,6 +52,8 @@ protected:
   BLEDescriptor mqttBrokerDescriptor_;
   BLEStringCharacteristic topicRootCharacteristic_;
   BLEDescriptor topicRootDescriptor_;
+  BLEStringCharacteristic locationCharacteristic_;
+  BLEDescriptor locationDescriptor_;
   BLEUnsignedIntCharacteristic sampleIntervalCharacteristic_;
   BLEUnsignedIntCharacteristic isLockedCharacteristic_;
   BLEDescriptor sampleIntervalDescriptor_;

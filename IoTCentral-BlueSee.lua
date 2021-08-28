@@ -10,6 +10,7 @@ local wifiPassword_uuid = bluesee.UUID.new('27030384-eac9-4907-8e44-5c16d778aa7a
 local hostname_uuid = bluesee.UUID.new('ef42bf97-1b9c-4d45-941d-d60dc564dc6f')
 local mqttBroker_uuid = bluesee.UUID.new('0d071785-b22b-49d6-86be-270de52da930')
 local topicRoot_uuid = bluesee.UUID.new('18cda5b0-3b76-4319-9716-acd1a409d3f6')
+local location_uuid = bluesee.UUID.new('69394063-f713-4ff7-be75-77d614d91709')
 local sampleInterval_uuid = bluesee.UUID.new('1682229f-bb5c-4f4a-96a9-1027f13d83f9')
 local isConfigurationLocked_uuid = bluesee.UUID.new('d02db20e-6e1f-4541-bd3d-7715e00b2b82')
 local configurationLock_uuid = bluesee.UUID.new('29636a43-d59a-46a1-ad0a-34aa23a0e90c')
@@ -168,6 +169,8 @@ bluesee.register_service(config_service_uuid, function(span)
             add_ReadWriteTextControl(span, "MQTT Broker", ch)
         elseif ch.uuid == topicRoot_uuid then
             add_ReadWriteTextControl(span, "Root Topic", ch)
+        elseif ch.uuid == location_uuid then
+            add_ReadWriteTextControl(span, "Location", ch)
         elseif ch.uuid == sampleInterval_uuid then
             add_ReadWriteUnsignedIntegerControl(span, "Sample Interval", ch)
         elseif ch.uuid == isConfigurationLocked_uuid then
