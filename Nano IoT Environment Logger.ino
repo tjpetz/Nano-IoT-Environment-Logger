@@ -11,8 +11,8 @@
  *  BLE Configuration
  *
  *  After reset the system will start in an initializing state.  In this state BLE is enabled
- *  and configuration setting changes can be made.  After 2 minutes the system
- *  will transition to the running state. 
+ *  and configuration setting changes can be made.  After 1 minutes if BLE is not connected 
+ *  the system will transition to the running state. 
  */
 
 #define DEFAULT_SSID SECRET_SSID
@@ -40,24 +40,12 @@
 #define _DEBUG_
 #include "Debug.h"
 
-#undef max
-#undef min
-
 #define BATTERY_SENSE A0
 
 ConfigService config(DEFAULT_SSID, DEFAULT_PASSWORD,
            DEFAULT_HOSTNAME, DEFAULT_LOCATION, 
            DEFAULT_MQTTBROKER, DEFAULT_MQTTROOTTOPIC,
            DEFAULT_SAMPLEINTERVAL);
-
-// struct {
-//   char ssid[64];
-//   char wifiPassword[64];
-//   char mqttBroker[128];
-//   char hostName[128];
-//   char topicRoot[128];
-//   char location[128];
-// } config;
 
 // Adafruit_SHTC3 envSensor;
 Adafruit_BME280 envSensor;
@@ -248,14 +236,6 @@ void onCentralDisconnected(BLEDevice central) {
 }
 
 void setup() {
-
-  // Initialize the configuration using dummies
-  // strncpy(config.ssid, SECRET_SSID, sizeof(config.ssid));
-  // strncpy(config.wifiPassword, SECRET_PASSWORD, sizeof(config.wifiPassword));
-  // strncpy(config.mqttBroker, DEFAULT_MQTTBROKER, sizeof(config.mqttBroker));
-  // strncpy(config.hostName, DEFAULT_HOSTNAME, sizeof(config.hostName));
-  // strncpy(config.topicRoot, DEFAULT_MQTTROOTTOPIC, sizeof(config.topicRoot));
-  // strncpy(config.location, DEFAULT_LOCATION, sizeof(config.location));
 
   Serial.begin(115200);
   delay(3000); // Give serial a moment to start
