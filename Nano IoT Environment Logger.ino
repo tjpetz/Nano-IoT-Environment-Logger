@@ -43,7 +43,7 @@
 // Define only if measuring the voltage of the battery
 #define BATTERY_SENSE A0
 
-#define _DEBUG
+#define _DEBUG_
 /** End configuration defines */
 
 #include <Arduino.h>
@@ -87,7 +87,8 @@ const unsigned int MAX_TOPIC_LENGTH = 255;
 byte macAddress[6]; // MAC address of the Wifi which we'll use in reporting
 
 RTCZero rtc; // Real Time Clock so we can time stamp data
-unsigned long lastRTCSync;
+uint32_t lastRTCSync;     // Track the last time we synced the clock
+const uint32_t resyncClock = 8 * 60 * 60;    // Resynch the clock to NTP every 8 hours.
 
 const int maxTries = 10; // Retry counters
 int retryCounter = 0;    // counter to keep track of failed connections
@@ -136,7 +137,7 @@ bool updateRTC() {
                rtc.getMonth(), rtc.getDay(), rtc.getHours(), rtc.getMinutes(),
                rtc.getSeconds());
 
-  lastRTCSync = millis();
+  lastRTCSync = rtc.getEpoch();
 
   return true;
 }
@@ -226,9 +227,7 @@ void onCentralDisconnected(BLEDevice central) {
 */
 void longDeepSleep(unsigned long sleepDuration_ms) {
 
-  Serial.print("Beginning long sleep of ");
-  Serial.print(sleepDuration_ms);
-  Serial.println(" ms");
+  DEBUG_PRINTF("Beginning long sleep of %d ms\n", sleepDuration_ms);
   Serial.flush(); 
   USBDevice.detach();
 
@@ -246,7 +245,7 @@ void longDeepSleep(unsigned long sleepDuration_ms) {
 
   USBDevice.attach();   // Reattach the USB device after we wake up
   delay(1500);
-  Serial.println("Waking from a long sleep!");
+  DEBUG_PRINTF("Waking from a long sleep!\n");
 }
 
 void setup() {
@@ -315,6 +314,12 @@ void loop() {
                 rtc.getHours(), rtc.getMinutes(), rtc.getSeconds());
 
       connectWiFi();
+
+      // Update the RTC with the current time every resynchClock seconds.  Note use RTC because millis() does not advance while in deep sleep
+      if ((lastRTCSync + resyncClock) <= rtc.getEpoch()) {
+        updateRTC();        
+      }
+            
       mqttClient.connect(config.mqttBroker, port);
       mqttClient.beginMessage(topic);
 
