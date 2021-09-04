@@ -32,7 +32,7 @@
 #define DEFAULT_MQTTBROKER SECRET_MQTTBROKER
 #define DEFAULT_HOSTNAME "iot_nano_001"
 #define DEFAULT_MQTTROOTTOPIC "tjpetz.com/sensor"
-#define DEFAULT_SAMPLEINTERVAL 60
+#define DEFAULT_SAMPLEINTERVAL 15
 #define DEFAULT_LOCATION "unknown"
 
 // Define only one of the following for the sensor type connected to the Nano.
@@ -43,7 +43,7 @@
 // Define only if measuring the voltage of the battery
 #define BATTERY_SENSE A0
 
-#define _DEBUG_
+// #define _DEBUG_
 /** End configuration defines */
 
 #include <Arduino.h>
@@ -70,6 +70,7 @@ Adafruit_ADT7410 envSensor;
 #include "secret.h"
 #include "ConfigService.h"
 #include "Debug.h"
+#include "MovingAverageFilter.h"
 
 ConfigService config(DEFAULT_SSID, DEFAULT_PASSWORD,
            DEFAULT_HOSTNAME, DEFAULT_LOCATION, 
@@ -77,7 +78,7 @@ ConfigService config(DEFAULT_SSID, DEFAULT_PASSWORD,
            DEFAULT_SAMPLEINTERVAL);
 
 // We will not attempt connections to peripherals with a less then -90 dBm RSSI.
-#define RSSI_LIMIT -95
+#define RSSI_LIMIT -90
 
 WiFiClient wifiClient;             // Our wifi client
 MqttClient mqttClient(wifiClient); // Our MQTT client
@@ -93,6 +94,15 @@ const uint32_t resyncClock = 8 * 60 * 60;    // Resynch the clock to NTP every 8
 const int maxTries = 10; // Retry counters
 int retryCounter = 0;    // counter to keep track of failed connections
 bool success = false;
+
+#ifdef BATTERY_SENSE
+MovingAverageFilter<int, 4> battPctFiltered;    // Apply MA filter to the battery Pct to smooth the noise out
+
+// Using the default 3.3v AREF measure the battery voltage from between a 50/50 voltage divider
+inline const uint8_t measureBatteryPct() {
+  return constrain(map(analogRead(BATTERY_SENSE), 465, 651, 0, 100), 0, 100);
+}
+#endif
 
 const int watchdogTimeout = 16384;    // max timeout is 16.384 S
 
@@ -166,6 +176,7 @@ bool connectWiFi() {
     NVIC_SystemReset();
   }
 
+  WiFi.lowPowerMode();      // Start low power mode
   return true;
 }
 
@@ -251,14 +262,24 @@ void longDeepSleep(unsigned long sleepDuration_ms) {
 void setup() {
 
   Serial.begin(115200);
-  delay(3000); // Give serial a moment to start
+  delay(5000); // Give serial a moment to start
 
   DEBUG_PRINTF("RESET Register = 0x%0x\n", PM->RCAUSE.reg);
 
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 
-  Serial.print("Battery = "); Serial.println(analogRead(A0));
+#ifdef BATTERY_SENSE
+  analogReference(AR_DEFAULT);
+  // Prime the MA filter
+  DEBUG_PRINTF(" Nbr of Taps = %d\n", battPctFiltered.nbrOfTaps());  
+  for (unsigned int i = 0; i < battPctFiltered.nbrOfTaps(); i++) {
+    battPctFiltered.addSample(measureBatteryPct());
+    delay(10);
+  }
+  DEBUG_PRINTF("Primed Battery Pct = %d\n", battPctFiltered.value());
+#endif
+
   Watchdog.enable(watchdogTimeout);
 
   // Start the sensors and devices
@@ -269,7 +290,7 @@ void setup() {
   Watchdog.reset();
 
   config.debug_print_configuration();
-  
+
   DEBUG_PRINTF("Initializing BLE\n");
   BLE.begin(); 
   BLE.setLocalName(config.hostName);
@@ -342,11 +363,13 @@ void loop() {
 #endif
 
 #ifdef BATTERY_SENSE
+  battPctFiltered.addSample(measureBatteryPct());
+
   snprintf(
       msg, sizeof(msg),
       "{ \"sensor\": \"%s\", \"location\": \"%s\", \"sampleTime\": \"%s\", "
       "%s, \"battery\": %d }",
-      config.hostName, config.location, dateTime, sensor_msg, map(analogRead(BATTERY_SENSE), 465, 651, 0, 100));
+      config.hostName, config.location, dateTime, sensor_msg, battPctFiltered.value());
 #else
   snprintf(
       msg, sizeof(msg),

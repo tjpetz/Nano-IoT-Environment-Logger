@@ -1,6 +1,6 @@
 #include "ConfigService.h"
 
-#define _DEBUG_
+// #define _DEBUG_
 #include "Debug.h"
 
 #include <FlashAsEEPROM.h>
