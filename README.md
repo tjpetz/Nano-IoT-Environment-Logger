@@ -8,11 +8,13 @@ measurements to an MQTT broker.
 ### Multiple Sensors
 
 The program supports one of several sensors.
+
 - BME280 - temperature, humidity, and pressure
 - SHTC3 - temperatue, humididy
 - ADT7410 - temperature
 
 ### BLE Configuration
+
 During the first minute after reset connect to the board with BLE to change the default configuration.
 The configuration will be saved in flash memory.
 
