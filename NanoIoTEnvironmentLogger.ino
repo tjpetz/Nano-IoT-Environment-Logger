@@ -32,7 +32,7 @@
 #define DEFAULT_MQTTBROKER SECRET_MQTTBROKER
 #define DEFAULT_HOSTNAME "iot_nano_001"
 #define DEFAULT_MQTTROOTTOPIC "tjpetz.com/sensor"
-#define DEFAULT_SAMPLEINTERVAL 15
+#define DEFAULT_SAMPLEINTERVAL 600
 #define DEFAULT_LOCATION "unknown"
 
 // Define only one of the following for the sensor type connected to the Nano.
@@ -41,9 +41,10 @@
 // #define SENSOR_TYPE_ADT7410
 
 // Define only if measuring the voltage of the battery
-#define BATTERY_SENSE A0
+// #define BATTERY_SENSE A0
 
-// #define _DEBUG_
+#define _DEBUG_
+#define VERY_LOW_POWER
 /** End configuration defines */
 
 #include <Arduino.h>
@@ -53,6 +54,8 @@
 #include <WiFiNINA.h>
 #include <time.h>
 #include <Adafruit_SleepyDog.h>
+#include <Wire.h>
+#include <Arduino_LSM6DS3.h>
 
 #ifdef SENSOR_TYPE_BME280
 #include <Adafruit_BME280.h>
@@ -106,7 +109,7 @@ inline const uint8_t measureBatteryPct() {
 
 const int watchdogTimeout = 16384;    // max timeout is 16.384 S
 
-enum {
+enum validStates_t {
   initializing = 0,
   running  
 } currentState;
@@ -154,7 +157,7 @@ bool updateRTC() {
 
 /** @brief Connect to wifi with retries, force reboot if unsuccessful */
 bool connectWiFi() {
-  int maxTries = 10;
+  const int maxTries = 5;
   int tries = 0;
 
   while ((WiFi.begin(config.ssid, config.wifiPassword) != WL_CONNECTED) &&
@@ -174,6 +177,8 @@ bool connectWiFi() {
     Serial.flush();
     delay(500);
     NVIC_SystemReset();
+  } else {
+    Watchdog.reset();
   }
 
   WiFi.lowPowerMode();      // Start low power mode
@@ -234,8 +239,7 @@ void onCentralDisconnected(BLEDevice central) {
   DEBUG_PRINTF("  BLE Central = %s\n", BLE.central().address().c_str());
 }
 
-/** @brief sleep for a long duration of time, turning off peripherals to save power
-*/
+/** @brief sleep for a long duration of time, turning off peripherals to save power */
 void longDeepSleep(unsigned long sleepDuration_ms) {
 
   DEBUG_PRINTF("Beginning long sleep of %d ms\n", sleepDuration_ms);
@@ -261,10 +265,12 @@ void longDeepSleep(unsigned long sleepDuration_ms) {
 
 void setup() {
 
+#ifdef _DEBUG_
   Serial.begin(115200);
   delay(5000); // Give serial a moment to start
+#endif
 
-  DEBUG_PRINTF("RESET Register = 0x%0x\n", PM->RCAUSE.reg);
+  DEBUG_PRINTF("\n\n\n\n===============================\nRESET Register = 0x%0x\n", PM->RCAUSE.reg);
 
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
@@ -306,6 +312,8 @@ void setup() {
 
 void loop() {
 
+  uint32_t loopStart = millis();
+
   Watchdog.reset();  
   digitalWrite(LED_BUILTIN, 1);
   delay(500);
@@ -340,9 +348,11 @@ void loop() {
       if ((lastRTCSync + resyncClock) <= rtc.getEpoch()) {
         updateRTC();        
       }
-            
+
+      Watchdog.reset();      
       mqttClient.connect(config.mqttBroker, port);
       mqttClient.beginMessage(topic);
+      Watchdog.reset();
 
 #ifdef SENSOR_TYPE_BME280
       auto temp = envSensor.readTemperature();
@@ -379,13 +389,16 @@ void loop() {
 #endif
 
       DEBUG_PRINTF("Message = %s\n", msg);
+      Watchdog.reset();
       mqttClient.print(msg);
       mqttClient.endMessage();
       mqttClient.flush();
+      Watchdog.reset();
       delay(3000);
       mqttClient.stop();
       disconnectWiFi();
 
+      DEBUG_PRINTF("loop duration = %d\n", millis() - loopStart);
       Watchdog.reset();
       longDeepSleep(config.sampleInterval * 1000);
       break;

@@ -15,7 +15,7 @@
   {                                                                            \
     char _buff[MAX_DEBUG_BUFF];                                                \
     snprintf(_buff, MAX_DEBUG_BUFF, __VA_ARGS__);                              \
-    Serial.print(_buff);                                                       \
+    Serial.print(_buff);                                                      \
   }
 #else
 #define DEBUG_PRINTF(...)
